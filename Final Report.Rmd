@@ -1,0 +1,234 @@
+---
+title: "Predicting Outcomes of Connect 4 Using Sequential Neural Networks"
+author: "Nicholas Wong & Weida Xu"
+date: "December 22, 2017"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+For our project, we will predict the outcomes of Connect 4 games using the state of the grid as input variables. Each square on the 6 x 7 grid has been coded into one of 3 possible states: 'x' or 'o' representing the two colors of the checker pieces chosen by the opposing players, and 'b' representing a blank square. This results in 6 x 7 x 3 = 126 input features, which are then fed into a sequential neural network with a softmax output layer to predict whether games result in a win, loss or draw with respect to the first player (i.e. the player who chose 'x').
+
+## Connect 4
+
+![**Connect 4 gameplay**](Connect_Four.gif)
+
+Connect 4 is a popular 2-player game in which players take turns dropping checker pieces of their chosen color into a 6 x 7 suspended grid. The game is won by the first player who successfully forms a horizontal, vertical or diagonal line on the playing grid with 4 of their pieces.
+
+There are 4,531,985,219,092 possible configurations for the position of pieces on a standard 6 x 7 grid, and the game is classified as an adversarial, zero-sum game in game-theoretic terms which means that any advantage to one player is always to the disadvantage of the other. While is is possible in principle to solve the game through brute force computing, the game has also been solved by game theorists and it may be shown that with perfect play, the first player can force a win before the 42nd move of the game. However, our project will not employ any game-theoretical adversarial models but rather use deep learning alone to teach our neural network to recognize winning positions in the game based on observing a large number of labeled games.
+
+## Applying Deep Learning to Games
+
+While computers have been used to play games for many decades, deep learning has been a relatively new development in the endeavor. The simplest games such as tic-tac-toe may be completely solved using a simple tree search method, such that at any given state of the game the computer program may simply traverse every possible move until it reaches a winning outcome. Tree search methods were also used by Deep Blue (in conjunction with evaluation functions designed by chess experts) when it defeated reigning world chess champion Garry Kasparov in a chess match in 1996.
+
+![**Illustration of tree search**](treesearch.jpg)
+
+However, more complicated games such as Go render tree seearch methods infeasible given the state of computing since a game of Go has more possible configurations than the number of atoms in the known universe. Instead of traversing a tree search with brute force, Google DeepMind used (i) monte carlo tree search methods in conjunction with (ii) deep learning to develop the AlphaGo program which recently defeated 9-dan Go champion Lee Sedol in 2016. 
+
+Thus, inspired by AlphaGo, we have similarly decided to use deep learning to predict maximum likelihood outcomes Connect 4 games.
+
+# Neural Networks
+
+Our choice of deep learning architecture is the sequential neural network, which is a basic linear stack of layers of neurons. Our sequential neural network has the following configuration: an input layer which consists of 126 neurons (1 for each input feature of our data), 3 hidden layers with (600, 300, 150) neurons respectively, and an output layer consisting of 3 neurons (1 for each possible outcome).
+
+![**Illustration of simple neural network with 1 hidden layer of 4 neurons**](neuralnet.png)
+
+## Activation Functions
+
+We decided on using the rectified linear unit (ReLU), i.e. $f(x) = max(0, x)$ as the activation function in our hidden layers for 2 primary reasons. First, the ReLU has been shown to be computationally fast compared to other activation functions. Second, the ReLU does not suffer from the so-called 'vanishing gradient problem' experienced by other activation functions such as the sigmoid or hyperbolic tangent functions, in which the weights of the neuron become impossible to update as the gradient of the function approaches 0. This is because the gradient of the ReLU function is directly proportional to its input for the entire domain of positive real values.
+
+![**ReLU activation function**](relu.jpg)
+
+
+![**tanh activation function**](tanh.png)
+
+## Output Function
+
+We have chosen the softmax function, i.e. $\sigma(z) = \frac{e^z_j}{\sum_{k=1}^{K}e^{z_k}}$, for our output layer as it is the natural choice for predicting likelihoods for k > 2 classes. The softmax function represents the output probability as the exponentiated input over the sum of all exponentiated inputs, which avoids the problem of negative probabilities. The final prediction will then be $\underset{z \in \mathbb{R}}{argmax} \  \sigma(z)$
+
+## Cost Function
+
+We will use the categorical cross-entropy cost function, which is a natural choice for the kind of categorical predictions we will be making. The equation for the cross-entropy cost function is given as follows:
+
+$$C = -\sum_i (y'_i log(y_i) + (1-y'_i)log(1-y_i'))$$
+
+## Backpropagation
+
+The neural network will be trained using the 'backpropagation' algorithm, in which errors are propagated backwards throughout the network in order to update weights. The algorithm was first popularized by Rumelhart, Hinton and Williams in a 1986 paper in Nature^[Rumelhart, David E., Geoffrey E. Hinton, and Ronald J. Williams. "Learning representations by back-propagating errors." nature 323, no. 6088 (1986): 533-536.] and is considered the standard method for gradient descent optimization in neural networks.
+
+First, the algorithm calculates the errors in the output layer using the equation $$\delta^L_j = \frac{\partial C}{\partial a^L_j}\sigma'(z_j^L)$$, where the first term on the right represents the derivative of the cost function with respect to the j-th output activation function, and the second term represents the derivative of the softmax function with respect to the inputs from the previous layer. 
+
+Second, we calculate the error with respect to each layer using the equation $$\delta^l = ((w^{l+1})^T\delta^{l+1})\odot \sigma'(z^l)$$, which we can think of as the 'backwards' propagation step since each step depends on the derivative of the previous layer of the network.
+
+Third, we compute the derivative of the cost function with respect to the biases in the network using the equation $$\frac{\partial C}{\partial b^l_j} = \delta^l_j$$, which is identical to the value of the error calculated in the previous step.
+
+Lastly, we find the derivative of the cost function with respect to the weights in the network using the equation $$\frac{\partial C}{\partial w^l_{jk}} = a_k^{l-1}\delta^l_j$$.
+
+This final derivative will be the gradient we will use to update the weights of the network using gradient descent.
+
+![**Illustration of sequential neural network being trained by backpropagation **](backprop.gif)
+
+
+# Optimization
+
+To optimize our neural network, we used 4 primary methods: 1) mini-batch gradient descent, 2) dropout, 3) adaptive momentum and 4) cross-validation.
+
+## Mini-Batch Gradient Descent
+
+Mini-batch gradient descent is a variation of the gradient descent algorithm which updates weights using small samples of the data rather than the entire data set. This method has been shown to speed up the convergence of the gradient descent algorithm and because it updates more frequently than regular batch gradient descent which updates only once after iterating through the entire dataset. We have chosen a batch size of 2000 observations and 50 epochs (iterations through the dataset) through trial and error.
+
+We have decided against using stochastic gradient descent (SGD) because it has been known to get stuck in saddle points, and is also extremely slow for large datasets such as ours with over 67 thousand observations.
+
+
+## Dropout
+
+Dropout is a recent innovation in neural network regularization in which a certain fraction of neurons in the network are randomly 'turned off' in each updating phase so as to improve the robustness of the gradient descent process. Thus with a network of $h$ neurons it is possible to evaluate up to $2^h$ models through dropout and average them to find the best one. We chose a dropout rate of 0.4 based on trial and error.
+
+![**Illustration of dropout **](dropout.png)
+
+## Adaptive Momentum (ADAM)
+
+Adaptive momentum is a combination of two popular optimization methods: Momentum and RMSProp. Momentum is a method to dampen the oscillations of the mini-batch gradient descent method (described above) and accelerate the descent in the relevant direction of the optima. This method is combined with RMSProp, which stores an exponentially decaying average of past squared gradients. When the two are combined, the resulting ADAM algorithm maintains a separate learning rate for each parameter which is updated based on estimates of the first and second moments of the gradients, and any biases are corrected for automatically.
+
+![**Gradient descent without momentum**](without_momentum.gif)
+
+
+![**Gradient descent with momentum**](with_momentum.gif)
+
+
+We chose ADAM over RMSProp as the bias correction of ADAM has been shown to outperform RMSProp towards the end of optimization as the gradients become sparser. The initial values of 0.001 for the learning rate, 0.9 exponential decay of the first moment estimates, and 0.999 exponential decay for second moment estimates were chosen based on the recommendation of the creators of the ADAM algorithm.
+
+![**Illustration of various optimizers, ADAM is approximated in the diagram by RMSProp**](adam.gif)
+
+## Cross Validation
+
+Cross validation is a simple method to prevent overfitting to the training data by taking a random subset of each training epoch to use as a validation set, which is then iterated over each of the 50 training epochs. We chose a value of 0.1 for the validation split based on trial and error.
+
+# The Data
+
+The dataset consists of 67,557 instances of Connect 4 games, labeled with the outcome of the games with respect to the first player ('win', 'loss' or 'draw'). The data may be accessed at [http://archive.ics.uci.edu/ml/datasets/Connect-4](http://archive.ics.uci.edu/ml/datasets/Connect-4).
+
+# Processing the Data
+
+We converted the input variables into a binary format through a process called one-hot encoding. This means that each of the 42 features (i.e. the state of 42 squares in the 6 x 7 grid) will be split into 3 features - 'x', 'o' and 'b' - and a value of '1' or '0' will be assigned to the feature based on whether the state is true or false for the given square on the grid. This is because our features are categorical, which would not make sense as the argument for the activation function in the hidden layer, i.e. $\sigma(wx + b)$. Using the `caret` package we split the data into a training and testing dataset.
+
+```{r, message=FALSE}
+library(readr)
+data <- read_csv("data/connect-4.dat", 
+                     col_names = FALSE, skip = 47)
+
+table(data$X43)
+data.new <- apply(data,2, as.factor)
+
+data.new <- as.data.frame(data.new)
+data.use <- model.matrix(~ . + 0, data=data.new, contrasts.arg = lapply(data.new, contrasts, contrasts=FALSE))
+ncol(data.use)
+
+stopifnot(require(caret))
+
+in_train <- createDataPartition(data.new$X43, p = 0.75, list = FALSE)
+training <- data.use[in_train, ]
+testing <- data.use[-in_train, ]
+
+testingdata <- data.new[-in_train, ]
+x_trainrf <- data.new[in_train, -43]
+y_trainrf <- data.new[in_train, 43]
+x_testrf <- data.new[-in_train, -43]
+y_testrf <- data.new[-in_train, 43]
+
+x_train <- as.matrix(training[,-c(127:129)])
+y_train <- as.matrix(training[,c(127:129)])
+x_test <- as.matrix(testing[,-c(127:129)])
+y_test <- as.matrix(testing[,c(127:129)])
+```
+
+# Implementation
+Implementation of our sequential neural network is done with the `keras` package with the TensorFlow backend. 4 layers are defined: 3 hidden layers with 600, 300, and 150 neurons, with a 126 neuron input for the first hidden layer; and 1 output layer with 3 neurons. As explained previously, the activation function used in the hidden layers is the ReLU function, and the softmax function is used in the output layer. We chose a dropout rate of 0.4, as mentioned.
+
+```{r}
+library(keras)
+
+model <- keras_model_sequential() 
+model %>% 
+  layer_dense(units = 600, activation = "relu", input_shape = c(126)) %>% 
+  layer_dropout(rate = 0.4) %>% 
+  layer_dense(units = 300, activation = "relu") %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 150, activation = "relu") %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 3, activation = "softmax")
+
+summary(model)
+
+```
+This results in a total of 302,103 parameters to be trained. We next define the loss function as the categorical crossentropy loss function, the adam optimizer with 0.001 learning rate, 0.9 B1 and 0.999 B2, and a categorical accuracy model metric; these are all explained above.
+
+```{r}
+model %>% compile(
+  loss = loss_categorical_crossentropy,
+  optimizer = optimizer_adam(lr = 0.001, beta_1 = 0.9, beta_2 = 0.999),
+  metric_categorical_accuracy
+)
+```
+
+Training of the neural network is then done with batch size 256, validation split of 0.1, and 50 epochs as explained previously. For brevity, we have excluded the training process output from the final report.
+
+```{r, message=FALSE}
+history <- model %>% fit(
+  x_train, y_train, 
+  epochs = 50, batch_size = 256, 
+  validation_split = 0.1
+)
+```
+```{r}
+plot(history)
+```
+
+
+The plot above shows the change in loss and categorical accuracy against epochs, for both the training and validation datasets. As seen above, training accuracy improves with each successive iteration.
+
+# Results
+We now evaluate the neural network with our testing data.
+
+```{r}
+p_correct_nn <- model %>% evaluate(x_test, y_test, batch_size = 256, verbose = 1)
+paste("The accuracy of the neural network is:", round(p_correct_nn$categorical_accuracy, 3))
+
+```
+For a more comprehensive assessment of our neural net performance, the following confusion matrix is constructed using our testing data:
+
+```{r}
+raw_pred_nn <- model %>% predict(x_test)
+pred_nn <- model %>% predict_classes(x_test)
+table_nn <- table(testingdata$X43, pred_nn)
+table_nn
+
+```
+
+
+# Comparison with Benchmark
+We decided to benchmark our neural network performance against a random forest model. The random forest model has been highly popular among winners of competitive data prediction contests such as those on kaggle. We run the random forest model using the `randomForest` package, using our training data manipulated for the random forest model previously, and evaluate using the testing data below:
+
+```{r, message=FALSE}
+library(randomForest)
+
+rforest <- randomForest(x_trainrf, y_trainrf)
+pred_rforest <- predict(rforest, newdata = x_testrf, type = "response")
+rforest_table <- table(testingdata$X43, pred_rforest)
+
+p_correct_rforest <- (rforest_table[1,1] + rforest_table[2,2] + rforest_table[3,3]) / nrow(testingdata)
+paste("The accuracy of the random forest model is:", round(p_correct_rforest, 3))
+
+rforest_table
+```
+It can be seen that the accuracy of the random forest model is worse than the neural network. As seen in the confusion matrix above, random forest fails to predict most of the draw results, performing much worse than the neural network in this aspect, while also having a lower overall accuracy. 
+
+# Conclusion
+
+In conclusion, the sequential neural network is a suitable model for classification, in particular predicting connect 4 results. It is also more effective than the random forest benchmark model, which is a very popular model for classification in many prediction competitions.
